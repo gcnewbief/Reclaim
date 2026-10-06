@@ -1,0 +1,18 @@
+# .NET build output
+bin/
+obj/
+out/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# app output
+recovered/
+logs/
