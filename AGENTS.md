@@ -90,7 +90,15 @@ Volume offset `0x56D00000`, cluster 4096 B, ~1,165,518 MFT records,
 ~700 GB of user data, mostly films — large non-resident video recovery is
 the primary workload.
 
-## Git hygiene
+## Git / GitHub / releases
 
-`publish/`, `bin/`, `obj/`, `*_out.txt`, `uitest_*.png` are gitignored.
-No remotes configured — local history only.
+Remote: `https://github.com/gcnewbief/Reclaim` (public, MIT). Push via
+`py push.py` — it reads `GITHUB_TOKEN`/`GITHUB_REPO` from `.env`
+(gitignored; fine-grained PAT scoped to VoltTest + Reclaim).
+
+Release flow: bump `<Version>` in `Reclaim.csproj` → `dotnet publish
+-c Release -o publish` → commit → `git tag -a vX.Y.Z` → `py push.py`
+→ `py release.py` (creates the GitHub release + uploads the exe).
+
+`publish/`, `bin/`, `obj/`, `*_out.txt`, `uitest_*.png`, `.env` are
+gitignored.
