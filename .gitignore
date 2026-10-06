@@ -16,3 +16,8 @@ Desktop.ini
 # app output
 recovered/
 logs/
+publish/
+
+# probe/test artifacts
+*_out.txt
+cli_log.txt

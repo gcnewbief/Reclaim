@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>reclaim-cli</AssemblyName>
+  </PropertyGroup>
+
+  <!-- share the engine sources with the WPF app -->
+  <ItemGroup>
+    <Compile Include="..\Native.cs"  Link="Native.cs" />
+    <Compile Include="..\RawDisk.cs" Link="RawDisk.cs" />
+    <Compile Include="..\Ntfs.cs"    Link="Ntfs.cs" />
+    <Compile Include="..\Carver.cs"  Link="Carver.cs" />
+    <Compile Include="..\Volumes.cs" Link="Volumes.cs" />
+    <Compile Include="..\Models.cs"  Link="Models.cs" />
+  </ItemGroup>
+
+</Project>
