@@ -5,8 +5,20 @@ public enum EntrySource { Mft, Carved }
 public enum Health { Good, Partial, Poor, Unknown }
 
 /// <summary>One recoverable file/dir found on the disk.</summary>
-public sealed class RecoveredEntry
+public sealed class RecoveredEntry : System.ComponentModel.INotifyPropertyChanged
 {
+    private static readonly System.ComponentModel.PropertyChangedEventArgs CheckedArgs =
+        new(nameof(Checked));
+    private bool _checked;
+
+    /// <summary>Checkbox state in the results grid — marks the file for recovery.</summary>
+    public bool Checked
+    {
+        get => _checked;
+        set { _checked = value; PropertyChanged?.Invoke(this, CheckedArgs); }
+    }
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
     public string Name { get; set; } = "";
     public string FolderPath { get; set; } = "";   // reconstructed parent chain
     public long Size { get; set; }

@@ -16,6 +16,7 @@
     <Compile Include="..\Carver.cs"  Link="Carver.cs" />
     <Compile Include="..\Volumes.cs" Link="Volumes.cs" />
     <Compile Include="..\Models.cs"  Link="Models.cs" />
+    <Compile Include="..\Smart.cs"   Link="Smart.cs" />
   </ItemGroup>
 
 </Project>

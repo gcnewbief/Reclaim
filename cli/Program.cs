@@ -15,6 +15,13 @@ Flog($"=== start pid={Environment.ProcessId} ===");
 int diskNum = args.Length > 0 && int.TryParse(args[0], out var n) ? n : 1;
 bool carve = args.Contains("--carve");
 
+if (args.Contains("--smart"))
+{
+    var rep = Smart.Read(diskNum);
+    Console.WriteLine(Smart.Format(rep));
+    return rep.Ok ? 0 : 1;
+}
+
 var disks = RawDisk.Enumerate();
 Console.WriteLine($"== enumerated {disks.Count} drive(s) ==");
 foreach (var d in disks) Console.WriteLine($"  {d.Label}");

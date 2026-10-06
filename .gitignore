@@ -21,3 +21,4 @@ publish/
 # probe/test artifacts
 *_out.txt
 cli_log.txt
+uitest_*.png

@@ -87,6 +87,40 @@ public partial class MainWindow : Window
 
     private void Refresh_Click(object s, RoutedEventArgs e) => LoadDrives();
 
+    // ------------------------------------------------------------- drive health light
+
+    private int _lightGen;
+    private Smart.Report? _lastSmart;
+    private int _lastSmartDisk = -1;
+
+    private void SetLight(Smart.Light l, string tip)
+    {
+        DriveLight.Fill = new System.Windows.Media.SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(l switch
+            {
+                Smart.Light.Green   => "#35e05a",
+                Smart.Light.Amber   => "#ffb000",
+                Smart.Light.Red     => "#ff5252",
+                _                   => "#3a4a3a",
+            }));
+        DriveLightLbl.Text = $"drive health: {l.ToString().ToLowerInvariant()}";
+        DriveLightBox.ToolTip = tip;
+    }
+
+    private async void DriveList_SelectionChanged(object s, SelectionChangedEventArgs e)
+    {
+        _lastSmart = null; _lastSmartDisk = -1;
+        if (DriveList.SelectedItem is not RawDisk disk)
+        { SetLight(Smart.Light.Unknown, "no drive selected"); return; }
+        int gen = ++_lightGen;
+        SetLight(Smart.Light.Unknown, $"Disk {disk.Number}: reading SMART…");
+        var rep = await Task.Run(() => Smart.Read(disk.Number));
+        if (gen != _lightGen) return;                    // selection changed meanwhile
+        _lastSmart = rep; _lastSmartDisk = disk.Number;
+        SetLight(rep.TrafficLight, rep.Summary);
+        Log($"SMART: {rep.Summary} — {rep.TrafficLight}");
+    }
+
     private RawDisk? PickDisk()
     {
         if (DriveList.SelectedItem is RawDisk d) return d;
@@ -96,7 +130,8 @@ public partial class MainWindow : Window
 
     private void SetBusy(bool busy)
     {
-        ScanBtn.IsEnabled = DeepOnlyBtn.IsEnabled = RefreshBtn.IsEnabled = !busy;
+        ScanBtn.IsEnabled = DeepOnlyBtn.IsEnabled = RefreshBtn.IsEnabled =
+            SmartBtn.IsEnabled = !busy;
         CancelBtn.IsEnabled = busy;
         DriveList.IsEnabled = !busy;
     }
@@ -268,6 +303,51 @@ public partial class MainWindow : Window
 
     private void Cancel_Click(object s, RoutedEventArgs e) { _cts?.Cancel(); Log("cancel requested"); }
 
+    private async void Smart_Click(object s, RoutedEventArgs e)
+    {
+        var disk = PickDisk();
+        if (disk is null) return;
+        SmartBtn.IsEnabled = false;
+        Smart.Report rep;
+        if (_lastSmart is { } cached && _lastSmartDisk == disk.Number)
+            rep = cached;                            // auto-read on selection already ran
+        else
+        {
+            Log($"reading SMART for Disk {disk.Number}…");
+            rep = await Task.Run(() => Smart.Read(disk.Number));
+            _lastSmart = rep; _lastSmartDisk = disk.Number;
+            SetLight(rep.TrafficLight, rep.Summary);
+            Log($"SMART: {rep.Summary}");
+        }
+        SmartBtn.IsEnabled = true;
+        try { ShowReport($"Disk {disk.Number} SMART", Smart.Format(rep)); }
+        catch (Exception ex) { Log($"report window failed: {ex.Message}"); }
+    }
+
+    private void ShowReport(string title, string text)
+    {
+        var w = new Window
+        {
+            Title = title, Width = 820, Height = 560, Owner = this,
+            Background = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#0a0e0a")),
+        };
+        var box = new System.Windows.Controls.TextBox
+        {
+            Text = text, IsReadOnly = true, FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+            FontSize = 12, Foreground = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#69f0ae")),
+            Background = System.Windows.Media.Brushes.Transparent, BorderThickness = new Thickness(0),
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Margin = new Thickness(12),
+            TextWrapping = TextWrapping.NoWrap,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        w.Content = box;
+        w.Show();
+        Log($"  report window '{title}' shown; windows={System.Windows.Application.Current.Windows.Count}");
+    }
+
     private IProgress<ScanProgress> MakeProgress() =>
         new Progress<ScanProgress>(p =>
         {
@@ -292,12 +372,59 @@ public partial class MainWindow : Window
                     StringComparison.OrdinalIgnoreCase)) return false;
             return true;
         };
-        CountLbl.Text = $"{view.Cast<RecoveredEntry>().Count():N0} shown / {_entries.Count:N0} found";
+        RefreshCheckState();                        // syncs counts, header box, recover button
+        if (_entries.Count == 0) { HealthLbl.Text = ""; return; }
+        var g = _entries.GroupBy(e => e.Health)
+            .ToDictionary(x => x.Key, x => x.Count());
+        HealthLbl.Text =
+            $"health: ■ {g.GetValueOrDefault(Health.Good):N0} good " +
+            $"■ {g.GetValueOrDefault(Health.Partial):N0} partial " +
+            $"■ {g.GetValueOrDefault(Health.Poor):N0} poor " +
+            $"■ {g.GetValueOrDefault(Health.Unknown):N0} unknown";
+    }
+
+    private void UpdateCounts()
+    {
+        int shown = System.Windows.Data.CollectionViewSource
+            .GetDefaultView(_entries).Cast<RecoveredEntry>().Count();
+        int chk = _entries.Count(e => e.Checked);
+        CountLbl.Text = $"{shown:N0} shown / {_entries.Count:N0} found" +
+                        (chk > 0 ? $"  ·  {chk:N0} checked" : "");
+    }
+
+    // ------------------------------------------------------------- checkboxes
+
+    private bool _bulk;
+
+    private System.Collections.Generic.IEnumerable<RecoveredEntry> Filtered() =>
+        System.Windows.Data.CollectionViewSource
+            .GetDefaultView(_entries).Cast<RecoveredEntry>();
+
+    private void CheckAll_Changed(object s, RoutedEventArgs e)
+    {
+        if (_bulk) return;
+        bool val = CheckAll.IsChecked == true;
+        foreach (var en in Filtered()) en.Checked = val;
+        RefreshCheckState();
+    }
+
+    private void RowCheck_Changed(object s, RoutedEventArgs e) => RefreshCheckState();
+
+    private void RefreshCheckState()
+    {
+        if (!IsInitialized) return;
+        int chk = _entries.Count(e => e.Checked);
+        RecoverBtn.IsEnabled = chk > 0 || Grid.SelectedItems.Count > 0;
+        _bulk = true;
+        int shown = Filtered().Count();
+        CheckAll.IsChecked = chk == 0 ? false : chk >= shown && shown > 0 ? true : null;
+        _bulk = false;
+        UpdateCounts();
     }
 
     private void Grid_SelectionChanged(object s, SelectionChangedEventArgs e)
     {
-        RecoverBtn.IsEnabled = Grid.SelectedItems.Count > 0;
+        RecoverBtn.IsEnabled = Grid.SelectedItems.Count > 0 || _entries.Any(x => x.Checked);
         if (Grid.SelectedItem is RecoveredEntry en)
         {
             string loc = en.Source == EntrySource.Carved
@@ -322,7 +449,9 @@ public partial class MainWindow : Window
 
     private async void Recover_Click(object s, RoutedEventArgs e)
     {
-        var sel = Grid.SelectedItems.Cast<RecoveredEntry>().ToList();
+        var sel = _entries.Where(x => x.Checked).ToList();   // checkbox set wins
+        if (sel.Count == 0)
+            sel = Grid.SelectedItems.Cast<RecoveredEntry>().ToList();
         if (sel.Count == 0 || _disk is null) return;
         string outDir = OutDir.Text.Trim();
         if (outDir.Length == 0) { Status("Pick an output folder."); return; }

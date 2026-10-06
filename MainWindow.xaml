@@ -45,17 +45,80 @@
             <Setter Property="Foreground" Value="#d9ffe4"/>
             <Setter Property="BorderBrush" Value="#1d2b1d"/>
             <Setter Property="Padding" Value="8,5"/>
-            <!-- the dropdown popup resolves system brushes, so override them locally -->
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton Name="ToggleButton" Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay,
+                                                RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="#101510" BorderBrush="#1d2b1d"
+                                                BorderThickness="1" CornerRadius="4">
+                                            <Path x:Name="Arrow" Data="M 0 0 L 6 6 L 12 0 Z"
+                                                  Fill="#69f0ae" Width="10" Height="6"
+                                                  HorizontalAlignment="Right" Margin="0,0,10,0"
+                                                  VerticalAlignment="Center"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="#162216"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="ContentSite" IsHitTestVisible="False"
+                                Content="{TemplateBinding SelectionBoxItem}"
+                                ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                Margin="10,6,28,6" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                            <TextBox x:Name="PART_EditableTextBox" Visibility="Hidden"
+                                     IsReadOnly="{TemplateBinding IsReadOnly}"/>
+                            <Popup x:Name="Popup" Placement="Bottom" Focusable="False"
+                                   AllowsTransparency="True"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   PopupAnimation="Slide">
+                                <Grid MinWidth="{TemplateBinding ActualWidth}"
+                                      MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                      Background="#101510">
+                                    <Border BorderBrush="#1d2b1d" BorderThickness="1" CornerRadius="4"/>
+                                    <ScrollViewer Margin="1" SnapsToDevicePixels="True">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
             <Style.Resources>
-                <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#101510"/>
-                <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#d9ffe4"/>
-                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#1b5e20"/>
-                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#eaffea"/>
-                <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#101510"/>
                 <Style TargetType="ComboBoxItem">
-                    <Setter Property="Background" Value="#101510"/>
                     <Setter Property="Foreground" Value="#d9ffe4"/>
-                    <Setter Property="Padding" Value="8,4"/>
+                    <Setter Property="Padding" Value="8,5"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ComboBoxItem">
+                                <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="#1b5e20"/>
+                                    </Trigger>
+                                    <Trigger Property="IsHighlighted" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="#1b5e20"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
                 </Style>
             </Style.Resources>
         </Style>
@@ -108,6 +171,26 @@
         <Style TargetType="ScrollBar">
             <Setter Property="Background" Value="#0c110c"/>
         </Style>
+        <Style TargetType="GridViewColumnHeader">
+            <Setter Property="Background" Value="#101510"/>
+            <Setter Property="Foreground" Value="#69f0ae"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="BorderBrush" Value="#1d2b1d"/>
+            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GridViewColumnHeader">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="14">
@@ -136,11 +219,27 @@
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="Drive:" Foreground="{StaticResource Dim}" VerticalAlignment="Center"/>
                     <ComboBox x:Name="DriveList" Width="420" Margin="8,0,12,0"
-                              DisplayMemberPath="Label"/>
-                    <Button x:Name="RefreshBtn" Content="⟳ Refresh" Click="Refresh_Click"/>
+                              DisplayMemberPath="Label"
+                              SelectionChanged="DriveList_SelectionChanged"/>
+                    <Border x:Name="DriveLightBox" Padding="8,3" Background="#101510"
+                            BorderBrush="{StaticResource Border}" BorderThickness="1"
+                            CornerRadius="4" VerticalAlignment="Center"
+                            ToolTipService.ShowDuration="20000">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="DriveLight" Width="12" Height="12"
+                                     Fill="#3a4a3a" Stroke="#0a0e0a" StrokeThickness="1"
+                                     VerticalAlignment="Center"/>
+                            <TextBlock x:Name="DriveLightLbl" Text="drive health: —"
+                                       Foreground="{StaticResource Dim}" FontSize="11"
+                                       Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    <Button x:Name="RefreshBtn" Content="⟳ Refresh" Margin="8,0,0,0" Click="Refresh_Click"/>
                     <Button x:Name="ScanBtn" Content="▶ SCAN" Margin="14,0,0,0" Click="ScanBtn_Click"/>
                     <Button x:Name="DeepOnlyBtn" Content="DEEP SCAN ONLY" Margin="8,0,0,0" Click="DeepOnly_Click"
                             ToolTip="Skip triage/MFT - go straight to signature carving"/>
+                    <Button x:Name="SmartBtn" Content="⛑ SMART" Margin="8,0,0,0" Click="Smart_Click"
+                            ToolTip="Drive SMART health attributes"/>
                     <Button x:Name="CancelBtn" Content="✕ CANCEL" Margin="8,0,0,0" IsEnabled="False" Click="Cancel_Click"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
@@ -150,6 +249,8 @@
                               VerticalAlignment="Center" IsChecked="True" Checked="Filter_Changed" Unchecked="Filter_Changed"/>
                     <TextBlock x:Name="CountLbl" Margin="16,0,0,0" Foreground="{StaticResource Dim}"
                                VerticalAlignment="Center"/>
+                    <TextBlock x:Name="HealthLbl" Margin="16,0,0,0" Foreground="{StaticResource Teal}"
+                               VerticalAlignment="Center" FontFamily="Consolas" FontSize="11"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                     <TextBlock Text="Recover to:" Foreground="{StaticResource Dim}" VerticalAlignment="Center"/>
@@ -190,6 +291,28 @@
                 </Grid.RowDefinitions>
                 <DataGrid x:Name="Grid" SelectionChanged="Grid_SelectionChanged">
                     <DataGrid.Columns>
+                        <DataGridCheckBoxColumn Width="36"
+                                Binding="{Binding Checked, UpdateSourceTrigger=PropertyChanged}">
+                            <DataGridCheckBoxColumn.Header>
+                                <CheckBox x:Name="CheckAll" HorizontalAlignment="Center"
+                                          Checked="CheckAll_Changed" Unchecked="CheckAll_Changed"
+                                          ToolTip="check/uncheck all filtered files"/>
+                            </DataGridCheckBoxColumn.Header>
+                            <DataGridCheckBoxColumn.ElementStyle>
+                                <Style TargetType="CheckBox">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    <EventSetter Event="Checked" Handler="RowCheck_Changed"/>
+                                    <EventSetter Event="Unchecked" Handler="RowCheck_Changed"/>
+                                </Style>
+                            </DataGridCheckBoxColumn.ElementStyle>
+                            <DataGridCheckBoxColumn.EditingElementStyle>
+                                <Style TargetType="CheckBox">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    <EventSetter Event="Checked" Handler="RowCheck_Changed"/>
+                                    <EventSetter Event="Unchecked" Handler="RowCheck_Changed"/>
+                                </Style>
+                            </DataGridCheckBoxColumn.EditingElementStyle>
+                        </DataGridCheckBoxColumn>
                         <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*"/>
                         <DataGridTextColumn Header="Path" Binding="{Binding FolderPath}" Width="2.5*"/>
                         <DataGridTextColumn Header="Size" Binding="{Binding Size, StringFormat={}{0:N0}}" Width="110"/>

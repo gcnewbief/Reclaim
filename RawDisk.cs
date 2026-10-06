@@ -105,5 +105,7 @@ public sealed class RawDisk : IDisposable
         return buf;
     }
 
+    public override string ToString() => Label;
+
     public void Dispose() => _h.Dispose();
 }

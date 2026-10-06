@@ -3,6 +3,7 @@
 // Drives: launch app -> wait for drive list -> pick target -> SCAN -> monitor.
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
 using FlaUI.Core.Input;
 using FlaUI.UIA3;
 
@@ -37,6 +38,20 @@ if (target == null) { Console.WriteLine($"FAIL: Disk {targetDisk} not in list");
 target.Select();
 Console.WriteLine($"selected: {target.Text}");
 
+// screenshot the drive ComboBox so we can verify readability
+try
+{
+    var shot = driveList.Capture();
+    var shotPath = @"C:\Users\Gcnewbief\Devin working\Reclaim\uitest_combo.png";
+    shot.Save(shotPath);
+    Console.WriteLine($"combo screenshot: {shotPath}");
+    Thread.Sleep(4000);   // let the drive-health SMART read settle so the light shows
+    var shot2 = win.Capture();
+    shot2.Save(@"C:\Users\Gcnewbief\Devin working\Reclaim\uitest_window.png");
+    Console.WriteLine("window screenshot saved");
+}
+catch (Exception ex) { Console.WriteLine($"screenshot failed: {ex.Message}"); }
+
 string Log() => logBox.Patterns.Value.PatternOrDefault?.Value ?? "(no log)";
 string Status() => statusLbl.Patterns.Value.PatternOrDefault?.Value
                    ?? statusLbl.Name ?? "?";
@@ -61,11 +76,46 @@ var t0 = DateTime.Now;
 while (DateTime.Now - t0 < TimeSpan.FromSeconds(scanSeconds))
 {
     Thread.Sleep(2000);
-    Console.WriteLine($"  status: {Status()}");
+    var st = Status();
+    Console.WriteLine($"  status: {st}");
+    if (st.Contains("Scan complete") || st.Contains("failed") || st.Contains("Cancelled"))
+        break;
 }
 Console.WriteLine("--- log tail ---");
 var log = Log();
 foreach (var l in log.Split('\n').TakeLast(15)) Console.WriteLine($"  {l}");
+
+// exercise the row checkboxes - toggle the first two rows
+try
+{
+    var grid = win.FindFirstDescendant(cf.ByAutomationId("Grid"));
+    var boxes = grid?.FindAllDescendants(cf.ByControlType(ControlType.CheckBox))
+        .Take(2).ToArray() ?? [];
+    Console.WriteLine($"checkboxes found: {grid?.FindAllDescendants(cf.ByControlType(ControlType.CheckBox)).Length}");
+    foreach (var b in boxes) { b.AsCheckBox().Toggle(); }
+    Thread.Sleep(800);
+    var recover = win.FindFirstDescendant(cf.ByAutomationId("RecoverBtn"));
+    Console.WriteLine($"after checking {boxes.Length}: recover enabled={recover?.IsEnabled}");
+    win.Capture().Save(@"C:\Users\Gcnewbief\Devin working\Reclaim\uitest_checked.png");
+    Console.WriteLine("checked screenshot saved");
+}
+catch (Exception ex) { Console.WriteLine($"checkbox exercise failed: {ex.Message}"); }
+
+// SMART button exercise
+var smartBtn = win.FindFirstDescendant(cf.ByAutomationId("SmartBtn"));
+if (smartBtn != null)
+{
+    Console.WriteLine($"clicking SMART… (enabled={smartBtn.IsEnabled})");
+    if (!smartBtn.IsEnabled) { Console.WriteLine("SMART btn disabled - scan still running"); }
+    else smartBtn.AsButton().Invoke();
+    Thread.Sleep(8000);
+    Console.WriteLine("log after SMART click:");
+    foreach (var l in Log().Split('\n').TakeLast(4)) Console.WriteLine($"    {l}");
+    // report window is owned/non-modal; verify via the app's own log line
+    var after = Log();
+    Console.WriteLine(after.Contains("report window") ? "SMART PASS: report window shown"
+                                                    : "SMART FAIL: no report window");
+}
 
 // check for modal error dialogs
 var modals = win.ModalWindows;

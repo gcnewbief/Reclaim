@@ -42,6 +42,13 @@ internal static class Native
         out uint lpBytesReturned, IntPtr lpOverlapped);
 
     [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool DeviceIoControl(
+        SafeFileHandle hDevice, uint dwIoControlCode,
+        byte[] lpInBuffer, uint nInBufferSize,
+        byte[] lpOutBuffer, uint nOutBufferSize,
+        out uint lpBytesReturned, IntPtr lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool WriteFile(
         SafeFileHandle hFile, byte[] lpBuffer, uint nNumberOfBytesToWrite,
         out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);

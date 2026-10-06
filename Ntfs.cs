@@ -376,7 +376,7 @@ public sealed class NtfsScanner
     }
 
     /// <summary>Read every MFT extent at recSize stride once volume geometry is known.</summary>
-    public IEnumerable<MftRecord> ReadMftExtents(int recSize, IProgress<ScanProgress> prog,
+    public IEnumerable<MftRecord> ReadMftExtents(int recSize, IProgress<ScanProgress>? prog,
                                                CancellationToken ct)
     {
         var results = new List<MftRecord>();

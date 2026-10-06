@@ -1,0 +1,96 @@
+# Reclaim — agent notes
+
+Windows disk/data recovery tool. WPF desktop app, `net10.0-windows`, C#.
+Motivating case: a 1 TB Crucial BX500 whose first ~1 GB was wiped by a drive
+test — partition table + boot sector gone, but the NTFS MFT (~3–5 GB onward)
+survived. Design goal is a *generalist* tool, not just this failure mode.
+
+## Hard rules
+
+- **Never write to the source disk.** All recovery paths are read-only; the
+  app refuses output folders on the same physical disk (see `Recover_Click`).
+- **Never advise initializing a disk.** "Initialize" prompts mean a missing
+  partition table, not a dead drive — data is usually intact.
+- Physical drive access (`\\.\PhysicalDriveN`) needs elevation — the manifest
+  declares `requireAdministrator`.
+- Keep diagnostic detail high — this tool's selling point is narrating what
+  it finds (tier choices, bitmap stats, bad regions), not hiding it.
+
+## Architecture
+
+Tiered scan, auto-fallback:
+
+| Tier | What | Trigger |
+|------|------|---------|
+| 0 | `Volumes.Triage` — MBR/GPT + boot-sector probe per partition | every scan |
+| 1 | Quick scan — read `$MFT` directly via a healthy NTFS boot sector | healthy boot sector |
+| 2 | Smart scan — hunt `FILE` records until the MFT can be self-located (record 0's `$DATA` runs → volume offset + cluster size), then read MFT extents directly (~35 s on the test drive) | default when boot sector is gone |
+| 2x | Exhaustive deep scan — every-sector record hunt + signature carve | "DEEP SCAN ONLY" button |
+
+Key mechanics:
+
+- `RawDisk` — sector-sized buffered reads, tolerates bad regions (returns
+  zeros + records `BadRanges` instead of throwing).
+- `NtfsScanner` — MFT record parser (1/4 KB records, fixup applied),
+  `$Bitmap` cluster-health scoring (Good/Partial/Poor), parent-ref path
+  rebuild, resident/non-resident data via run lists.
+- `Carver` — signature table; video sigs (MKV/MP4-any-`ftyp`/AVI/WMV/TS)
+  capped at 32 GB.
+- `Smart` — ATA pass-through (`SMART_RCV_DRIVE_DATA`) → falls back to
+  `Get-StorageReliabilityCounter` via PowerShell; `Report.TrafficLight`
+  gives the green/amber/red drive-health verdict.
+
+## File map
+
+`Native.cs` P/Invoke · `RawDisk.cs` physical drive IO + enumeration ·
+`Volumes.cs` partition/boot triage · `Ntfs.cs` MFT engine · `Carver.cs`
+signature carving · `Smart.cs` drive health · `Models.cs` `RecoveredEntry`
+(grid rows, `Checked` for recovery selection) · `MainWindow.*` UI ·
+`cli/` headless engine harness · `uitest/` FlaUI UI harness.
+
+## Build / publish / test
+
+The .NET SDK is per-user at `~/tools/dotnet` — not on PATH:
+
+```bash
+export PATH="/c/Users/Gcnewbief/tools/dotnet:$PATH"
+dotnet build                       # compile check
+dotnet publish -c Release -o publish   # self-contained 69 MB single exe
+```
+
+`Reclaim.csproj` bakes in `win-x64` + self-contained + single-file +
+compression — don't remove; the user wants zero-runtime installs.
+
+Test harnesses (all need elevation):
+
+- `cli_run.bat` — headless engine test vs Disk 1, logs to `cli_log.txt`
+- `smart_run.bat` — SMART read test
+- `uitest_run.bat` — FlaUI end-to-end: picks Disk 1, scans, screenshots
+  (`uitest_*.png`), toggles checkboxes, exercises SMART window
+
+## Known quirks (don't rediscover)
+
+- WPF `GridViewColumn.Width` has **no star sizing** — fixed/Auto only.
+- Restyled `ComboBox` needs `SelectionBoxItem` bound `ContentPresenter` as a
+  *sibling* of the ToggleButton, and items need `ToString()`/`DisplayMemberPath`
+  (we do `RawDisk.ToString() = Label`).
+- Never touch UI elements inside `Task.Run` — the triage bug pattern. Worker
+  methods must return log lines; the UI thread emits them.
+- FlaUI can't enumerate *owned* (non-modal) WPF child windows — assert on
+  the app's own "report window shown; windows=N" log line instead.
+- MFT records are 512-byte aligned to *volume start*, not absolute disk —
+  alignment checks use `% 512`, and chunk reads must carry a tail overlap.
+- `System.Windows.Forms` is imported (FolderBrowserDialog) — qualify
+  `Application`/`MessageBox` etc. to avoid ambiguity.
+
+## Test drive reference (Disk 1, CT1000BX500SSD1)
+
+Volume offset `0x56D00000`, cluster 4096 B, ~1,165,518 MFT records,
+~203,876 deleted, `$Bitmap` ~15.5% free, SMART amber (8 uncorrected reads).
+~700 GB of user data, mostly films — large non-resident video recovery is
+the primary workload.
+
+## Git hygiene
+
+`publish/`, `bin/`, `obj/`, `*_out.txt`, `uitest_*.png` are gitignored.
+No remotes configured — local history only.
