@@ -13,6 +13,9 @@ out/
 Thumbs.db
 Desktop.ini
 
+# secrets
+.env
+
 # app output
 recovered/
 logs/
