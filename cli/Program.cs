@@ -101,6 +101,36 @@ foreach (var r in records) if (!r.InUse) { del++; if (r.ResidentData != null) re
 Console.WriteLine($"deleted: {del:N0} ({resident:N0} resident)");
 Flog($"done. records={records.Count} deleted={del}");
 
+if (args.Contains("--tree"))
+{
+    // build RecoveredEntry rows + the folder tree exactly like the UI does,
+    // then dump top-level structure and timing
+    Console.WriteLine("\n== folder tree ==");
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    var entries = records.Select(r => new RecoveredEntry
+    {
+        Name = r.Name is "" ? $"record_{r.RecordNumber}" : r.Name,
+        FolderPath = scanner.BuildPath(r),
+        Size = r.RealSize,
+        State = r.InUse ? EntryState.Live : EntryState.Deleted,
+        Source = EntrySource.Mft,
+        IsDir = r.IsDir,
+        RecordNum = r.RecordNumber,
+    }).ToList();
+    Console.WriteLine($"  {entries.Count:N0} entries in {sw.ElapsedMilliseconds} ms");
+    sw.Restart();
+    var (roots, all, root, byPath) = FolderTreeBuilder.Build(entries);
+    Console.WriteLine($"  tree: {byPath.Count - 1:N0} folders in {sw.ElapsedMilliseconds} ms");
+    Flog($"tree: {byPath.Count - 1} folders, build {sw.ElapsedMilliseconds} ms");
+
+    int noPath = entries.Count(e => e.FolderPath is "");
+    int bracketed = entries.Count(e => e.FolderPath.StartsWith('['));
+    Console.WriteLine($"  entries with no folder path: {noPath:N0} · carved/other []: {bracketed:N0}");
+    foreach (var c in root.Children.OrderByDescending(c => c.DescTotal).Take(25))
+        Console.WriteLine($"  {c.DescTotal,10:N0}  {c.FullPath}");
+    Console.WriteLine($"  ... ({root.Children.Count:N0} top-level folders total)");
+}
+
 if (carve)
 {
     Console.WriteLine("\n== signature carve ==");

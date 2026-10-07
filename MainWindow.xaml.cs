@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Security.Principal;
 using System.Text.Json;
 using System.Windows;
@@ -19,15 +20,28 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _cts;
     private string _filter = "";
 
+    // folder tree (left panel)
+    private string? _folderFilter;                       // null = "all results"
+    private Dictionary<string, FolderNode> _nodeByPath = new();
+    private FolderNode? _treeRoot;                       // "(volume root)"
+    private FolderNode? _allNode;
+    private bool _suppressTreeCount;
+
     public MainWindow()
     {
         InitializeComponent();
         Grid.ItemsSource = _entries;
+        RecoveredEntry.CheckedChanged = OnEntryChecked;
         bool admin = new WindowsPrincipal(WindowsIdentity.GetCurrent())
             .IsInRole(WindowsBuiltInRole.Administrator);
         AdminNote.Text = admin ? "" : "  ⚠ not elevated — relaunch as Administrator";
         Log(admin ? "Running elevated — raw disk access available."
                   : "NOT elevated — drive list may be empty.");
+        var v = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "dev";
+        VersionLbl.Text = $"v{v}";
+        Title = $"Reclaim — data recovery  ·  v{v}";
         LoadDrives();
     }
 
@@ -244,6 +258,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) { Status($"Scan failed: {ex.Message}"); Log($"ERROR: {ex.Message}"); }
         finally { SetBusy(false); }
+        await RebuildTree();
         ApplyFilter();
     }
 
@@ -298,6 +313,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) { Status($"Deep scan failed: {ex.Message}"); Log($"ERROR: {ex.Message}"); }
         finally { SetBusy(false); }
+        await RebuildTree();
         ApplyFilter();
     }
 
@@ -367,6 +383,9 @@ public partial class MainWindow : Window
         view.Filter = o =>
         {
             if (o is not RecoveredEntry r) return false;
+            if (_folderFilter != null &&
+                !string.Equals(r.FolderPath, _folderFilter, StringComparison.OrdinalIgnoreCase))
+                return false;
             if (DeletedOnly.IsChecked == true && r.State != EntryState.Deleted) return false;
             if (_filter.Length > 0 && !r.DisplayPath.Contains(_filter,
                     StringComparison.OrdinalIgnoreCase)) return false;
@@ -404,11 +423,120 @@ public partial class MainWindow : Window
     {
         if (_bulk) return;
         bool val = CheckAll.IsChecked == true;
+        _suppressTreeCount = true;
         foreach (var en in Filtered()) en.Checked = val;
+        _suppressTreeCount = false;
+        RecountTree();
         RefreshCheckState();
     }
 
-    private void RowCheck_Changed(object s, RoutedEventArgs e) => RefreshCheckState();
+    /// <summary>RecoveredEntry.CheckedChanged hook — single source of truth for
+    /// every check toggle (grid click, UIA TogglePattern, tree apply is
+    /// suppressed and recounted in bulk instead).</summary>
+    private void OnEntryChecked(RecoveredEntry en, bool nowChecked)
+    {
+        if (_suppressTreeCount) return;
+        if (_nodeByPath.TryGetValue(en.FolderPath, out var node))
+            for (var p = node; p != null; p = p.Parent)
+            { p.DescChecked += nowChecked ? 1 : -1; p.RefreshCheck(); }
+        SyncAllNode();
+        RefreshCheckState();
+    }
+
+    // ------------------------------------------------------------- folder tree
+
+    private async Task RebuildTree()
+    {
+        _folderFilter = null;
+        FolderTree.ItemsSource = null;
+        _treeRoot = _allNode = null;
+        _nodeByPath = new();
+        if (_entries.Count == 0) return;
+        var snap = _entries.ToList();              // scan is done; snapshot for the bg pass
+        var (roots, all, root, byPath) =
+            await Task.Run(() => FolderTreeBuilder.Build(snap));
+        _nodeByPath = byPath;
+        _treeRoot = root;
+        _allNode = all;
+        FolderTree.ItemsSource = roots;
+        Log($"folder tree: {byPath.Count - 1:N0} folders from {_entries.Count:N0} entries");
+    }
+
+    private void SyncAllNode()
+    {
+        if (_allNode is null || _treeRoot is null) return;
+        _allNode.DescTotal = _treeRoot.DescTotal;
+        _allNode.DescChecked = _treeRoot.DescChecked;
+        _allNode.RefreshCheck();
+    }
+
+    /// <summary>Full recount of DescChecked — used after bulk ops that ran
+    /// with the per-entry hook suppressed. O(entries + nodes).</summary>
+    private void RecountTree()
+    {
+        if (_treeRoot is null) return;
+        static int Sum(FolderNode n)
+        {
+            int c = n.Files.Count(f => f.Checked);
+            foreach (var ch in n.Children) c += Sum(ch);
+            n.DescChecked = c;
+            n.RefreshCheck();
+            return c;
+        }
+        Sum(_treeRoot);
+        SyncAllNode();
+    }
+
+    private void ToggleFolder(FolderNode node)
+    {
+        var n = node.IsAll ? _treeRoot : node;     // "all results" toggles the whole tree
+        if (n is null) return;
+        bool v = n.DescChecked < n.DescTotal;      // partial/empty -> check all under it
+        int before = n.DescChecked;
+        _suppressTreeCount = true;
+        ApplyTreeCheck(n, v);
+        _suppressTreeCount = false;
+        int delta = n.DescChecked - before;
+        for (var p = n.Parent; p != null; p = p.Parent)
+        { p.DescChecked += delta; p.RefreshCheck(); }
+        SyncAllNode();
+        RefreshCheckState();
+        Log($"folder {(n.FullPath is { Length: > 0 } fp ? fp : n.Name)}: " +
+            $"{(v ? "checked" : "cleared")} — {Math.Abs(delta):N0} entries");
+    }
+
+    private static void ApplyTreeCheck(FolderNode n, bool v)
+    {
+        foreach (var f in n.Files) f.Checked = v;
+        foreach (var c in n.Children) ApplyTreeCheck(c, v);
+        n.DescChecked = v ? n.DescTotal : 0;
+        n.RefreshCheck();
+    }
+
+    // mouse: intercept before the CheckBox cycles its tri-state so we decide
+    private void FolderCheck_Preview(object s, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (((FrameworkElement)s).DataContext is FolderNode n) ToggleFolder(n);
+        e.Handled = true;
+    }
+
+    // keyboard (space) still lands here — same deterministic rule
+    private void FolderCheck_Click(object s, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)s).DataContext is FolderNode n) ToggleFolder(n);
+    }
+
+    private void FolderTree_Selected(object s, RoutedPropertyChangedEventArgs<object> e)
+    {
+        if (e.NewValue is not FolderNode n) return;
+        _folderFilter = n.FullPath;                // null on "all results" = no folder limit
+        ApplyFilter();
+        DetailLbl.Text = n.IsAll
+            ? $"all results — {n.DescTotal:N0} entries · {n.DescChecked:N0} checked"
+            : $"{(n.FullPath!.Length > 0 ? n.FullPath + "\\" : "(volume root)")} — " +
+              $"{n.Files.Count:N0} item(s) here · {n.DescTotal:N0} incl. subfolders · " +
+              $"{n.DescChecked:N0} checked";
+    }
 
     private void RefreshCheckState()
     {
@@ -473,7 +601,12 @@ public partial class MainWindow : Window
         _cts = new CancellationTokenSource();
         var scanner = _scanner;
         var disk = _disk;
-        int done = 0, failed = 0;
+        int done = 0, failed = 0, idx = 0;
+
+        var hud = new RecoveryHud(this, sel.Count, _cts);
+        IProgress<(int idx, int done, int fail, string name, long fb, long ft)> prog =
+            new Progress<(int, int, int, string, long, long)>(
+                t => hud.Update(t.Item1, t.Item2, t.Item3, t.Item4, t.Item5, t.Item6));
 
         try
         {
@@ -482,6 +615,8 @@ public partial class MainWindow : Window
                 foreach (var en in sel)
                 {
                     if (_cts.IsCancellationRequested) break;
+                    idx++;
+                    prog.Report((idx, done, failed, en.Name, 0, en.Size));
                     try
                     {
                         string rel = en.FolderPath.StartsWith("[") ? "" : en.FolderPath;
@@ -491,43 +626,130 @@ public partial class MainWindow : Window
                             string.Concat(en.Name.Split(Path.GetInvalidFileNameChars())));
                         if (en.IsDir) { Directory.CreateDirectory(dest); done++; continue; }
                         using var fs = new FileStream(dest, FileMode.Create, FileAccess.Write);
-                        WriteData(disk, scanner, en, fs);
+                        WriteData(disk, scanner, en, fs,
+                            b => prog.Report((idx, done, failed, en.Name, b, en.Size)));
                         done++;
                     }
                     catch { failed++; }
                 }
             }, _cts.Token);
-            Log($"Recovered {done} file(s) to {outDir}" + (failed > 0 ? $" — {failed} failed" : ""));
+            Log($"Recovered {done} file(s) to {outDir}" + (failed > 0 ? $" — {failed} failed" : "") +
+                (idx < sel.Count ? $" — cancelled after {idx}" : ""));
             Status($"Recovered {done} file(s).");
         }
-        finally { SetBusy(false); }
+        finally { SetBusy(false); hud.Close(); }
+    }
+
+    /// <summary>Small dark progress window while Recover_Click copies data.
+    /// Built in code — window resources/styles don't flow across windows, so
+    /// colors are set explicitly. Closing it cancels the recovery.</summary>
+    private sealed class RecoveryHud
+    {
+        private readonly Window _win;
+        private readonly System.Windows.Controls.ProgressBar _files, _fileBytes;
+        private readonly TextBlock _line1, _line2;
+
+        private static System.Windows.Media.Brush B(string hex) =>
+            new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex));
+
+        public RecoveryHud(Window owner, int totalFiles, CancellationTokenSource cts)
+        {
+            var mono = new System.Windows.Media.FontFamily("Consolas");
+            _line1 = new TextBlock
+            {
+                Foreground = B("#d9ffe4"), FontFamily = mono, FontSize = 12,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+            _line2 = new TextBlock
+            {
+                Foreground = B("#6f8f76"), FontFamily = mono, FontSize = 11,
+                Margin = new Thickness(0, 6, 0, 0),
+            };
+            _files = new System.Windows.Controls.ProgressBar
+            {
+                Minimum = 0, Maximum = totalFiles, Height = 12,
+                Foreground = B("#00e676"), Background = B("#0c110c"),
+                Margin = new Thickness(0, 8, 0, 0),
+            };
+            _fileBytes = new System.Windows.Controls.ProgressBar
+            {
+                Minimum = 0, Maximum = 1000, Height = 5,
+                Foreground = B("#69f0ae"), Background = B("#0c110c"),
+                Margin = new Thickness(0, 4, 0, 0),
+            };
+            var cancel = new System.Windows.Controls.Button
+            {
+                Content = "✕ CANCEL",
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                Margin = new Thickness(0, 10, 0, 0), Padding = new Thickness(12, 5, 12, 5),
+                Background = B("#1a2b1a"), Foreground = B("#69f0ae"),
+                BorderBrush = B("#1d2b1d"),
+            };
+            cancel.Click += (_, _) => cts.Cancel();
+
+            var panel = new StackPanel { Margin = new Thickness(16) };
+            panel.Children.Add(_line1);
+            panel.Children.Add(_files);
+            panel.Children.Add(_fileBytes);
+            panel.Children.Add(_line2);
+            panel.Children.Add(cancel);
+
+            _win = new Window
+            {
+                Title = "Reclaim — recovering", Width = 560, SizeToContent = SizeToContent.Height,
+                Owner = owner, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize, Background = B("#0a0e0a"),
+                Icon = owner.Icon, Content = panel, Topmost = false,
+            };
+            _win.Closing += (_, _) => cts.Cancel();
+            _win.Show();
+        }
+
+        public void Update(int idx, int done, int fail, string name, long fb, long ft)
+        {
+            _files.Value = idx;
+            _line1.Text = $"file {idx} — {name}";
+            _fileBytes.Value = ft > 0 ? 1000.0 * fb / ft : 0;
+            _line2.Text = ft > 0
+                ? $"{fb / 1e6:0.#} / {ft / 1e6:0.#} MB   ·   ok {done} · failed {fail}"
+                : $"ok {done} · failed {fail}";
+        }
+
+        public void Close() => _win.Close();
     }
 
     private static void WriteData(RawDisk disk, NtfsScanner? scanner,
-                                  RecoveredEntry en, Stream out_)
+                                  RecoveredEntry en, Stream out_, Action<long>? onBytes = null)
     {
         if (en.Source == EntrySource.Carved)
         {
-            CopyRegion(disk, out_, en.CarveOffset, en.CarveLen);
+            CopyRegion(disk, out_, en.CarveOffset, en.CarveLen, onBytes);
         }
         else if (en.ResidentData != null)
         {
-            out_.Write(en.ResidentData, 0, (int)Math.Min(en.ResidentData.Length, en.Size));
+            int n = (int)Math.Min(en.ResidentData.Length, en.Size);
+            out_.Write(en.ResidentData, 0, n);
+            onBytes?.Invoke(n);
         }
         else if (scanner != null && en.Runs.Count > 0)
         {
-            long remain = en.Size;
+            long remain = en.Size, wrote = 0;
             foreach (var (vcn, lcn, clusters) in en.Runs)
             {
                 long want = Math.Min(clusters * scanner.ClusterSize, remain);
                 if (want <= 0) break;
-                CopyRegion(disk, out_, scanner.LcnToOffset(lcn), want);
+                long base_ = wrote;
+                CopyRegion(disk, out_, scanner.LcnToOffset(lcn), want,
+                    b => onBytes?.Invoke(base_ + b));
+                wrote += want;
                 remain -= want;
             }
         }
     }
 
-    private static void CopyRegion(RawDisk disk, Stream out_, long off, long len)
+    private static void CopyRegion(RawDisk disk, Stream out_, long off, long len,
+                                   Action<long>? onBytes = null)
     {
         const int CH = 4 * 1024 * 1024;
         for (long pos = 0; pos < len; pos += CH)
@@ -535,6 +757,7 @@ public partial class MainWindow : Window
             int want = (int)Math.Min(CH, len - pos);
             var d = disk.ReadAt(off + pos, want);
             out_.Write(d, 0, d.Length);
+            onBytes?.Invoke(pos + d.Length);
         }
     }
 }

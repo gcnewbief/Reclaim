@@ -9,7 +9,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>Reclaim</AssemblyName>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
     <!-- Self-contained single-file publish: runtime embedded, no .NET install needed -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
@@ -20,6 +21,7 @@
   <ItemGroup>
     <Compile Remove="cli\**\*.cs" />
     <Compile Remove="uitest\**\*.cs" />
+    <Resource Include="icon.ico" />
   </ItemGroup>
 
 </Project>

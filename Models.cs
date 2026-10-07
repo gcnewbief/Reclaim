@@ -15,8 +15,19 @@ public sealed class RecoveredEntry : System.ComponentModel.INotifyPropertyChange
     public bool Checked
     {
         get => _checked;
-        set { _checked = value; PropertyChanged?.Invoke(this, CheckedArgs); }
+        set
+        {
+            if (_checked == value) return;
+            _checked = value;
+            CheckedChanged?.Invoke(this, value);
+            PropertyChanged?.Invoke(this, CheckedArgs);
+        }
     }
+
+    /// <summary>Fired once per real Checked change (grid click, UIA toggle,
+    /// tree bulk-apply) — the folder tree hooks this to keep per-directory
+    /// check counts in sync. Bulk ops suppress it and recount once.</summary>
+    public static Action<RecoveredEntry, bool>? CheckedChanged;
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 
     public string Name { get; set; } = "";

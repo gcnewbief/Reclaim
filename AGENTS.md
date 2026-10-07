@@ -45,8 +45,9 @@ Key mechanics:
 `Native.cs` P/Invoke · `RawDisk.cs` physical drive IO + enumeration ·
 `Volumes.cs` partition/boot triage · `Ntfs.cs` MFT engine · `Carver.cs`
 signature carving · `Smart.cs` drive health · `Models.cs` `RecoveredEntry`
-(grid rows, `Checked` for recovery selection) · `MainWindow.*` UI ·
-`cli/` headless engine harness · `uitest/` FlaUI UI harness.
+(grid rows, `Checked` for recovery selection) · `FolderTree.cs` folder-tree
+model (`FolderNode`, tri-state check propagation to descendants) ·
+`MainWindow.*` UI · `cli/` headless engine harness · `uitest/` FlaUI UI harness.
 
 ## Build / publish / test
 
@@ -82,6 +83,15 @@ Test harnesses (all need elevation):
   alignment checks use `% 512`, and chunk reads must carry a tail overlap.
 - `System.Windows.Forms` is imported (FolderBrowserDialog) — qualify
   `Application`/`MessageBox` etc. to avoid ambiguity.
+- Check-state sync flows through the static `RecoveredEntry.CheckedChanged`
+  hook, NOT grid events — UIA `TogglePattern` (uitest) never fires `Click`,
+  and `Checked`/`Unchecked` event setters fire spuriously on row recycling.
+  Bulk ops set `_suppressTreeCount` and recount once.
+- Tree checkboxes handle `PreviewMouseLeftButtonDown` with `e.Handled=true`
+  to kill WPF's tri-state cycling — partial always goes to fully-checked.
+- WPF binds to **properties only** — public fields silently fail (this is why
+  the folder tree once showed just the 2 root pseudo-nodes). `FolderNode`
+  members are properties for this reason.
 
 ## Test drive reference (Disk 1, CT1000BX500SSD1)
 
