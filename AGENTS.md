@@ -47,7 +47,9 @@ Key mechanics:
 signature carving · `Smart.cs` drive health · `Models.cs` `RecoveredEntry`
 (grid rows, `Checked` for recovery selection) · `FolderTree.cs` folder-tree
 model (`FolderNode`, tri-state check propagation to descendants) ·
-`MainWindow.*` UI · `cli/` headless engine harness · `uitest/` FlaUI UI harness.
+`MainWindow.*` UI (incl. code-built `RecoveryHud` progress window) ·
+`make_icon.py` regenerates `icon.ico` (exe + window icon) ·
+`cli/` headless engine harness · `uitest/` FlaUI UI harness.
 
 ## Build / publish / test
 
@@ -56,7 +58,7 @@ The .NET SDK is per-user at `~/tools/dotnet` — not on PATH:
 ```bash
 export PATH="/c/Users/Gcnewbief/tools/dotnet:$PATH"
 dotnet build                       # compile check
-dotnet publish -c Release -o publish   # self-contained 69 MB single exe
+dotnet publish -c Release -o publish   # self-contained ~72 MB single exe
 ```
 
 `Reclaim.csproj` bakes in `win-x64` + self-contained + single-file +
@@ -64,7 +66,9 @@ compression — don't remove; the user wants zero-runtime installs.
 
 Test harnesses (all need elevation):
 
-- `cli_run.bat` — headless engine test vs Disk 1, logs to `cli_log.txt`
+- `cli_run.bat` — headless engine test vs Disk 1 (`--tree` dumps folder-tree
+  stats: folder count, build ms, top folders) — console to `cli_out.txt`,
+  diagnostics to `cli_log.txt`
 - `smart_run.bat` — SMART read test
 - `uitest_run.bat` — FlaUI end-to-end: picks Disk 1, scans, screenshots
   (`uitest_*.png`), toggles checkboxes, exercises SMART window
@@ -92,6 +96,10 @@ Test harnesses (all need elevation):
 - WPF binds to **properties only** — public fields silently fail (this is why
   the folder tree once showed just the 2 root pseudo-nodes). `FolderNode`
   members are properties for this reason.
+- `Window.Resources` styles don't flow into child windows — `RecoveryHud` and
+  report windows set brushes explicitly instead of restyling.
+- `Progress<T>.Report` is explicit `IProgress<T>` — declare progress vars as
+  `IProgress<…>` or you can't call it.
 
 ## Test drive reference (Disk 1, CT1000BX500SSD1)
 
@@ -109,6 +117,10 @@ Remote: `https://github.com/gcnewbief/Reclaim` (public, MIT). Push via
 Release flow: bump `<Version>` in `Reclaim.csproj` → `dotnet publish
 -c Release -o publish` → commit → `git tag -a vX.Y.Z` → `py push.py`
 → `py release.py` (creates the GitHub release + uploads the exe).
+Both commit AND tag need the `-c user.name/-c user.email` identity flags
+(no global git identity). The version shown in the title bar / header reads
+`<Version>` via `AssemblyInformationalVersion`, so bumping the csproj is the
+only place it needs to change.
 
 `publish/`, `bin/`, `obj/`, `*_out.txt`, `uitest_*.png`, `.env` are
 gitignored.
