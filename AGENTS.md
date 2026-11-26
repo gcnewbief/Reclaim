@@ -100,6 +100,13 @@ Test harnesses (all need elevation):
   report windows set brushes explicitly instead of restyling.
 - `Progress<T>.Report` is explicit `IProgress<T>` — declare progress vars as
   `IProgress<…>` or you can't call it.
+- Single-file publish does NOT bundle WPF's native DLLs (wpfgfx_cor3,
+  PresentationNative_cor3, PenImc_cor3, vcruntime140_cor3, D3DCompiler_47_cor3)
+  — without `IncludeNativeLibrariesForSelfExtract` the lone exe dies silently
+  on other machines. Don't remove that csproj line.
+- Fatal crashes log to `%LOCALAPPDATA%\Reclaim\crash.log` via the handlers in
+  `App.xaml.cs` — check there first when a user reports a silent exit.
+  (A UAC-decline exit happens *before* our code runs — nothing to log.)
 
 ## Test drive reference (Disk 1, CT1000BX500SSD1)
 

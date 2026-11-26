@@ -9,13 +9,16 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>Reclaim</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <!-- Self-contained single-file publish: runtime embedded, no .NET install needed -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- WPF native DLLs (wpfgfx_cor3 etc.) aren't bundled by default — without this
+         the lone exe crashes silently on machines lacking them -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
